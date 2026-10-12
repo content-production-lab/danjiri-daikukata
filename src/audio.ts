@@ -1,6 +1,16 @@
 // 鳴物（太鼓・鉦・笛）と、車輪・群衆の音を WebAudio で合成する。音声ファイルは使わない。
 
 const STEPS = 8;
+const VOLUME = 0.8;
+const MUTE_KEY = 'danjiri-daikukata:muted';
+
+function loadMuted(): boolean {
+  try {
+    return localStorage.getItem(MUTE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 // 8分音符ごとの手（1 = 打つ）。大太鼓・締太鼓・鉦
 const ODAIKO = [1, 0, 0, 1, 1, 0, 1, 0];
 const SHIME = [0, 1, 1, 0, 1, 1, 0, 1];
@@ -22,17 +32,69 @@ export class Hayashi {
   private step = 0;
   private bar = 0;
   private timer = 0;
-  muted = false;
+  private fadeToken = 0;
+  muted = loadMuted();
   /** 外から更新する状態 */
   speedKmh = 0;
   slip = 0;
   excitement = 0;
 
+  /** 'running' | 'suspended' | 'closed' | 'none' */
+  get state(): string {
+    return this.ctx?.state ?? 'none';
+  }
+
+  /** 遊び始め・再開で鳴らす（初回はここで音の部品を組み立てる） */
   start(): void {
-    if (this.ctx) {
-      void this.ctx.resume();
-      return;
+    this.fadeToken++;
+    if (!this.ctx) this.build();
+    const ctx = this.ctx!;
+    void ctx.resume();
+    this.master.gain.cancelScheduledValues(ctx.currentTime);
+    this.master.gain.setTargetAtTime(this.muted ? 0 : VOLUME, ctx.currentTime, 0.08);
+  }
+
+  /** すぐ止める（一時停止・画面を隠したとき）。処理も止まる */
+  pause(): void {
+    this.fadeToken++;
+    if (this.ctx?.state === 'running') void this.ctx.suspend();
+  }
+
+  /** 音の部品ごと破棄する */
+  stop(): void {
+    window.clearInterval(this.timer);
+    void this.ctx?.close();
+    this.ctx = null;
+  }
+
+  /** pause() で止めた音を再開する */
+  resume(): void {
+    if (this.ctx?.state === 'suspended') void this.ctx.resume();
+  }
+
+  /** 音を小さくしていって止める（曳行の終わり） */
+  fadeOut(sec: number): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const token = ++this.fadeToken;
+    this.master.gain.cancelScheduledValues(ctx.currentTime);
+    this.master.gain.setTargetAtTime(0, ctx.currentTime, sec / 4);
+    window.setTimeout(() => {
+      if (token === this.fadeToken) void ctx.suspend();
+    }, sec * 1000);
+  }
+
+  setMuted(m: boolean): void {
+    this.muted = m;
+    try {
+      localStorage.setItem(MUTE_KEY, m ? '1' : '0');
+    } catch {
+      // 保存できなくても消音そのものは効く
     }
+    if (this.ctx) this.master.gain.setTargetAtTime(m ? 0 : VOLUME, this.ctx.currentTime, 0.05);
+  }
+
+  private build(): void {
     const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     const ctx = new AC();
     this.ctx = ctx;
@@ -41,7 +103,7 @@ export class Hayashi {
     comp.ratio.value = 4;
     comp.connect(ctx.destination);
     this.master = ctx.createGain();
-    this.master.gain.value = 0.8;
+    this.master.gain.value = 0;
     this.master.connect(comp);
     this.musicBus = ctx.createGain();
     this.musicBus.gain.value = 0.9;
@@ -89,17 +151,6 @@ export class Hayashi {
 
     this.nextTime = ctx.currentTime + 0.1;
     this.timer = window.setInterval(() => this.schedule(), 25);
-  }
-
-  stop(): void {
-    window.clearInterval(this.timer);
-    void this.ctx?.close();
-    this.ctx = null;
-  }
-
-  setMuted(m: boolean): void {
-    this.muted = m;
-    if (this.ctx) this.master.gain.setTargetAtTime(m ? 0 : 0.8, this.ctx.currentTime, 0.05);
   }
 
   /** 毎フレーム呼ぶ: 走行音の更新 */
@@ -165,7 +216,7 @@ export class Hayashi {
 
   private schedule(): void {
     const ctx = this.ctx;
-    if (!ctx) return;
+    if (!ctx || ctx.state !== 'running') return;
     this.excitement *= 0.985;
     // 速くなるほど鳴物も速く（やりまわしで最高潮）
     const bpm = 96 + Math.min(90, Math.max(0, this.speedKmh) * 3.4);

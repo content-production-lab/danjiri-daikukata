@@ -459,6 +459,7 @@ function handleEvents(events: GameEvent[]) {
         if (e.offset > 0.45) popup('危ない！', `着地が ${(e.offset * 100).toFixed(0)}cm ずれた`, true, 1.2);
         break;
       case 'end':
+        audio.fadeOut(3);
         window.setTimeout(() => showResult(e.reason), e.reason === 'goal' ? 1800 : 1400);
         if (e.reason === 'goal') {
           popup('宮入り！', '見事に曳き切った', false, 2);
@@ -526,6 +527,8 @@ function setPaused(p: boolean) {
   if (!game || game.ended || !$('title').hidden) return;
   paused = p;
   $('pause').hidden = !p;
+  if (p) audio.pause();
+  else audio.resume();
 }
 
 $('start').addEventListener('click', start);
@@ -536,6 +539,7 @@ $('to-title').addEventListener('click', () => {
 });
 $('resume').addEventListener('click', () => setPaused(false));
 $('quit').addEventListener('click', () => {
+  audio.pause();
   paused = false;
   $('pause').hidden = true;
   $('hud').hidden = true;
@@ -544,7 +548,24 @@ $('quit').addEventListener('click', () => {
   game = null;
 });
 input.onToggleCamera = () => (thirdPerson = !thirdPerson);
-input.onToggleMute = () => audio.setMuted(!audio.muted);
+const muteBtn = $<HTMLButtonElement>('mute');
+const showMute = () => {
+  muteBtn.textContent = audio.muted ? '🔇' : '🔊';
+  muteBtn.setAttribute('aria-label', audio.muted ? '音を出す' : '音を消す');
+};
+const toggleMute = () => {
+  audio.setMuted(!audio.muted);
+  showMute();
+};
+showMute();
+muteBtn.addEventListener('click', toggleMute);
+input.onToggleMute = toggleMute;
+
+// 画面を隠したら音を止め、遊んでいる最中なら戻ったときに再開する
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) audio.pause();
+  else if (game && !game.ended && !paused && $('title').hidden) audio.resume();
+});
 input.onPause = () => setPaused(!paused);
 
 // タッチ操作
@@ -650,6 +671,7 @@ if (import.meta.env.DEV) {
       for (let t = 0; t < sec; t += 1 / 60) advance(1 / 60);
     },
     game: () => game,
+    audioState: () => audio.state,
     /** 地車の基準座標系（前方・右・上）でカメラを置く。null で解除 */
     view: (fwd: number | null, right = 0, up = 0, lookUp = 2.5) => {
       if (fwd === null || !game) {
