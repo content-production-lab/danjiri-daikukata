@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="description" content="地車（だんじり）の大屋根に乗る大工方になって、やりまわしを決める3Dブラウザゲーム" />
+    <title>だんじり 大工方</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Zen+Old+Mincho:wght@700;900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <div id="view"></div>
+
+    <div id="hud" hidden>
+      <div class="hud-tl">
+        <div class="stat"><span class="k">時間</span><span id="h-time" class="v">0.0</span></div>
+        <div class="stat"><span class="k">得点</span><span id="h-score" class="v">0</span></div>
+        <div class="bar-wrap"><span class="k">傷み</span><div class="bar"><i id="h-damage"></i></div></div>
+      </div>
+      <canvas id="minimap" width="170" height="170" aria-label="コース図"></canvas>
+      <div id="callout"></div>
+      <div id="popup"></div>
+      <div id="lift">片輪が浮いた！</div>
+
+      <div class="hud-bl">
+        <div class="k">団扇の合図（後梃子）</div>
+        <div class="signal">
+          <span id="sig-l">◀ 左</span>
+          <div class="teko"><i id="h-teko"></i></div>
+          <span id="sig-r">右 ▶</span>
+        </div>
+        <div class="k" id="h-order">流せ</div>
+      </div>
+
+      <div class="hud-bc">
+        <div><span id="h-speed">0</span><small>km/h</small></div>
+        <div class="bar-wrap"><span class="k">綱の勢い</span><div class="bar"><i id="h-rope"></i></div></div>
+      </div>
+
+      <div class="hud-br">
+        <div class="k">大工方の重心</div>
+        <div class="balance">
+          <div class="zone l"></div>
+          <div class="zone r"></div>
+          <i id="h-lat"></i>
+          <b id="h-lean"></b>
+        </div>
+        <div class="balance thin"><i id="h-lon"></i></div>
+      </div>
+    </div>
+
+    <div id="touch" hidden>
+      <div class="pad left">
+        <button data-t="steerL">◀<small>団扇</small></button>
+        <button data-t="steerR">▶<small>団扇</small></button>
+        <button data-t="pull" class="wide">曳け</button>
+        <button data-t="brake" class="wide">止め</button>
+      </div>
+      <div class="pad right">
+        <div id="lean-pad"><span>← 体重移動 →</span><i></i></div>
+        <button data-t="jump" class="wide">跳ぶ</button>
+      </div>
+    </div>
+
+    <section id="title" class="screen">
+      <div class="card">
+        <p class="kicker">岸和田型 地車曳行</p>
+        <h1>だんじり<br /><span>大工方</span></h1>
+        <p class="lead">
+          地車の大屋根に立つ大工方（だいくがた）になって、団扇の合図で曳き手と梃子方を動かします。四トンの地車を、速さを落とさずに町の角で直角に曲げる「やりまわし」を決めましょう。
+        </p>
+        <table class="keys">
+          <tr><th>W / ↑</th><td>曳け（綱の曳き手が走る）</td></tr>
+          <tr><th>S / ↓</th><td>止め（前梃子でブレーキ）</td></tr>
+          <tr><th>A / D</th><td>団扇の合図（後梃子が後ろを振って曲げる）</td></tr>
+          <tr><th>← / →</th><td>体重移動（遠心力に負けないよう内側へ）</td></tr>
+          <tr><th>Space</th><td>跳ぶ（角の最中に決めれば大技）</td></tr>
+          <tr><th>C / M / P</th><td>視点の切り替え／音／一時停止</td></tr>
+        </table>
+        <p class="tip">こつ: 車輪は曲がりません。角の少し手前で団扇を振り、後ろを外へ振り出して向きを変えます。速すぎると家に突っ込み、片輪が浮いて横転します。</p>
+        <div class="assist">
+          <span>体重移動の手助け</span>
+          <label><input type="radio" name="assist" value="0.75" checked /> しっかり</label>
+          <label><input type="radio" name="assist" value="0.4" /> 少し</label>
+          <label><input type="radio" name="assist" value="0" /> なし（本職）</label>
+        </div>
+        <button id="start" class="go">曳行開始</button>
+        <p class="note">音が出ます。鳴物（太鼓・鉦・笛）はすべてブラウザ内で合成しています。</p>
+      </div>
+    </section>
+
+    <section id="result" class="screen" hidden>
+      <div class="card">
+        <p class="kicker" id="r-kicker">結果</p>
+        <h2 id="r-title"></h2>
+        <p id="r-reason" class="lead"></p>
+        <div class="total"><span>得点</span><b id="r-score">0</b></div>
+        <table id="r-table" class="corners"></table>
+        <div class="row">
+          <button id="retry" class="go">もう一度</button>
+          <button id="to-title" class="ghost">はじめに戻る</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="pause" class="screen" hidden>
+      <div class="card small">
+        <h2>一時停止</h2>
+        <div class="row">
+          <button id="resume" class="go">つづける</button>
+          <button id="quit" class="ghost">やめる</button>
+        </div>
+      </div>
+    </section>
+
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
